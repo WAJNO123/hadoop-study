@@ -1,0 +1,170 @@
+hadoop启动：
+启动HDFS：start-dfs.sh
+启动YARN：start-yarn.sh
+=====================================================================
+创建hdfs文件：
+hdfs dfs -mkdir /data/Netflix
+=====================================================================
+把用winscp传输过来的文件上传到hdfs上一步创建好的文件夹里面：
+
+hdfs dfs -put netflix_titles.csv /data/netflix/    （put后面需要完整的文件路径）
+=====================================================================
+创建个文件夹工作区：mkdir -p ~/hadoop-mapreduce-wordcount/src
+                                    mkdir -p ~/hadoop-mapreduce-wordcount/classes
+                                    cd ~/hadoop-mapreduce-wordcount
+
+=====================================================================
+用vim创建src下的YearCount.java文件：
+
+vim src/YearCount.java
+=====================================================================
+编写mapreduce代码到YearCount.java:
+
+import java.io.IOException;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class YearCount {
+
+    public static class YearMapper extends Mapper<Object, Text, Text, IntWritable> {
+
+        private static final IntWritable one = new IntWritable(1);
+        private Text year = new Text();
+        private boolean isHeader = true; // 用来跳过表头
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+
+            String line = value.toString();
+
+            // 跳过表头行
+            if (isHeader) {
+                isHeader = false;
+                if (line.contains("release_year")) {
+                    return;
+                }
+            }
+
+            // CSV 安全分割，考虑字段中带有逗号的情况
+            String[] fields = line.split(",(?=([^\"]*\"[^\"]*\")*[^\"]*$)");
+
+            if (fields.length > 7) {
+                String releaseYear = fields[7].trim();
+                if (!releaseYear.isEmpty() && releaseYear.matches("\\d{4}")) {
+                    year.set(releaseYear);
+                    context.write(year, one);
+                }
+            }
+        }
+    }
+
+    public static class YearReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+
+        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            context.write(key, new IntWritable(sum));
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "Netflix Year Count");
+
+        job.setJarByClass(YearCount.class);
+
+        job.setMapperClass(YearMapper.class);
+        job.setReducerClass(YearReducer.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+=====================================================================
+进入刚创建的目工作目录，在创建个classes然后编译：
+
+cd /home/bb/hadoop-mapreduce-wordcount
+mkdir -p classes
+==============================================================================================================================
+java编译：
+javac -classpath "/home/bb/hadoop-2.7.1/share/hadoop/common/hadoop-common-2.7.1.jar:/home/bb/hadoop-2.7.1/share/hadoop/mapreduce/hadoop-mapreduce-client-core-2.7.1.jar:/home/bb/hadoop-2.7.1/share/hadoop/common/lib/*:/home/bb/hadoop-2.7.1/share/hadoop/mapreduce/lib/*" -d classes src/YearCount.java
+
+结构：
+javac -classpath "<依赖jar路径1>:<依赖jar路径2>:..." -d <class文件输出目录> <源码文件路径>
+----------------------------------------------------------------------------------------------------------------------------------
+javac：Java 编译器命令
+
+-classpath：指定 编译时需要用到的 jar 包（依赖）
+
+Hadoop 的 MapReduce 程序需要依赖 Hadoop 提供的 jar 包
+
+主要包括：
+
+hadoop-common.jar（HDFS、配置类等基础功能）
+
+hadoop-mapreduce-client-core.jar（MapReduce 核心 API）
+
+其它依赖包（lib/*）
+
+-d classes：把编译后的 .class 文件输出到 classes/ 目录
+
+src/YearCount.java：你的源码文件。
+---------------------------------------------------------------------------------------------------------------------------------
+==========================================================================
+
+打包jar：
+jar -cvf yearcount.jar -C classes/ .
+结构：
+jar -cvf <jar包文件名> -C <class文件目录> .
+-------------------------------------------------------------------------------------------------------------------------
+jar：调用 Java 自带的打包工具
+
+-c：创建 jar 包
+
+-v：显示打包过程（verbose）
+
+-f：指定 jar 包文件名
+
+-C <目录>：切换到目录后把这个目录下的内容打进去
+
+.：表示把当前目录下所有内容都打进去（递归）
+------------------------------------------------------------------------------------------------------------------------------
+=====================================================================
+提交运行mapreduce：
+
+# 先删除旧的 output 目录（如果之前跑过）
+hdfs dfs -rm -r /output/netflix-yearcount
+# 提交任务
+hadoop jar yearcount.jar YearCount /data/netflix /output/netflix-yearcount 
+ 结构：hadoop jar <jar包文件> <主类名> <输入路径> <输出路径>
+
+=====================================================================
+查看结果：
+hdfs dfs -cat /output/netflix-yearcount/part-r-00000
+
+=====================================================================
+
+
+
+
+
+
+
+
+
+
+
