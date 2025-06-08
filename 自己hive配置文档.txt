@@ -1,0 +1,136 @@
+先下载hive在本地，通过winscp传送到linux的home/bb下：
+https://archive.apache.org/dist/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz
+在linux上传目录下解压：
+cd /home/bb
+tar -zxvf apache-hive-2.3.9-bin.tar.gz
+移动到标准目录（root权限需要）：
+mv apache-hive-2.3.9-bin /usr/local/hive
+配置hive环境变量：
+vi ~/.bashrc
+在这个文件末尾加上：
+export HIVE_HOME=/usr/local/hive
+export PATH=$PATH:$HIVE_HOME/bin
+立即生效：
+source ~/.bashrc
+验证hive命令：
+hive –version
+安装 MySQL 5.7
+yum install -y https://repo.mysql.com/mysql57-community-release-el7-11.noarch.rpm
+yum install -y mysql-community-server
+出现DNS错误，接着做：
+1.备份原YUM源：
+mkdir -p /etc/yum.repos.d/backup
+mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/backup/
+2.下载阿里云YUM源配置文件：
+wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+3.清理缓存并生成新缓存：
+yum clean all
+yum makecache
+4.测试YUM是否正常工作
+yum repolist
+5.继续安装mysql
+yum install -y mysql-community-server
+（遇到问题：Public key for mysql-community-libs-5.7.44-1.el7.x86_64.rpm is not installed，原因是 MySQL 官方源启用了 GPG 签名校验，需要先导入 GPG 公钥，否则无法验证包签名，yum 默认会拒绝安装）
+解决：导入mysql官方GPG key：
+rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+然后重新安装：
+yum install -y mysql-community-server
+启动mysql：
+systemctl start mysqld
+systemctl enable mysqld  # 开机自启
+查看mysql初始密码：
+grep 'temporary password' /var/log/mysqld.log
+修改root密码：
+mysql -uroot -p
+# 输入刚才查到的临时密码
+执行命令修改密码：
+ALTER USER 'root'@'localhost' IDENTIFIED BY '你的新密码';
+Exit；
+创建 Hive Metastore 数据库
+mysql -uroot -p
+# 输入刚刚设置的新密码
+创建 Hive 使用的 metastore 数据库：
+CREATE DATABASE hive DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
+GRANT ALL PRIVILEGES ON hive.* TO 'root'@'localhost' IDENTIFIED BY '你的新密码';
+FLUSH PRIVILEGES;
+EXIT;
+配置hive-site-xml：
+进入hive配置目录：
+cd /usr/local/hive/conf
+cp hive-default.xml.template hive-site.xml
+vi hive-site.xml
+在文件里加入以下配置（放在 <configuration> 标签内部）：
+<!-- Hive Metastore MySQL 配置 -->
+<property>
+  <name>javax.jdo.option.ConnectionURL</name>
+  <value>jdbc:mysql://localhost:3306/hive?createDatabaseIfNotExist=true&amp;useSSL=false</value>
+</property>
+
+<property>
+  <name>javax.jdo.option.ConnectionDriverName</name>
+  <value>com.mysql.jdbc.Driver</value>
+</property>
+
+<property>
+  <name>javax.jdo.option.ConnectionUserName</name>
+  <value>root</value>
+</property>
+
+<property>
+  <name>javax.jdo.option.ConnectionPassword</name>
+  <value>你的新密码</value>
+</property>
+
+<property>
+  <name>hive.metastore.warehouse.dir</name>
+  <value>/user/hive/warehouse</value>
+</property>
+
+<property>
+  <name>hive.execution.engine</name>
+  <value>mr</value>
+</property>
+配置JDBC（hive不自带mysql驱动。Windows下载后传到linux）：
+https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-5.1.49.tar.gz
+上传到 /usr/local/hive/ 目录：
+进入这个目录去解压：
+tar -zxvf mysql-connector-java-5.1.49.tar.gz
+复制jar包到hivelib目录：
+cp mysql-connector-java-5.1.49/mysql-connector-java-5.1.49.jar /usr/local/hive/lib/
+确认jar包已复制：
+ls /usr/local/hive/lib | grep mysql
+初始化hive metastore(创建元数据库表结构)：
+初始化命令：
+schematool -dbType mysql -initSchema
+启动hive：
+Hive
+（因为hive版本是2.3.9，在启动hadoop后在启动hive会出现报错：Relative path in absolute URI: ${system:java.io.tmpdir%7D/$%7Bsystem:user.name%7D，是因为这样用的是 JVM 里的系统属性 java.io.tmpdir 和 user.name，但 Hive 2.x + Hadoop 2.x 环境中，这些变量有时候不会被正确解析，解决方法是：
+先建目录：
+mkdir -p /usr/local/hive/iotmp
+chmod -R 777 /usr/local/hive/iotmp
+然后修改：/usr/local/hive/conf/hive-site.xml
+（vim快捷键是：/ hive.exec.local.scratchdir）
+<property>
+  <name>hive.exec.local.scratchdir</name>
+  <value>/usr/local/hive/iotmp</value>
+  <description>Local scratch space for Hive jobs</description>
+</property>
+
+<property>
+  <name>hive.querylog.location</name>
+  <value>/usr/local/hive/iotmp</value>
+  <description>Location of Hive run time structured log file</description>
+</property>
+
+<property>
+  <name>hive.downloaded.resources.dir</name>
+  <value>/usr/local/hive/iotmp</value>
+  <description>Temporary local directory for added resources in the remote file system.</description>
+</property>
+这个方法是通过手动指定本地 tmp 目录来绕过 Hive 默认路径变量未解析的问题；）
+
+
+
+
+
+
