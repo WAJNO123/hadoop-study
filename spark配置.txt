@@ -1,0 +1,94 @@
+spark下载：
+https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop2.7.tgz
+
+解压并改名为spark：
+cd /home/bb
+tar -zxvf spark-3.3.2-bin-hadoop2.tgz
+mv spark-3.3.2-bin-hadoop2 spark
+
+配置环境变量：
+vi ~/.bashrc
+添加：
+# Spark environment
+export SPARK_HOME=/home/bb/spark
+export PATH=$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin
+让配置文件生效：
+source ~/.bashrc
+
+配置 spark-env.sh：
+cd $SPARK_HOME/conf
+cp spark-env.sh.template spark-env.sh
+vi spark-env.sh
+添加：
+export JAVA_HOME=/home/bb/jdk1.8.0_202
+export HADOOP_CONF_DIR=/home/bb/hadoop-2.7.1/etc/hadoop
+export SPARK_MASTER_HOST=localhost
+
+测试安装是否成功：
+start-master.sh
+start-worker.sh spark://localhost:7077
+浏览器访问：
+http://localhost:8080
+
+spark简单测试：
+spark-shell
+val data = Seq(1,2,3,4,5)
+val rdd = sc.parallelize(data)
+val rdd2 = rdd.map(x => x * 2)
+rdd2.collect()   // 收集结果
+rdd2.count()     // 计数
+
+sparksql连接hive:
+spark-sql
+
+SHOW DATABASES;
+USE default;
+SHOW TABLES;
+SELECT * FROM your_table_name LIMIT 10;
+
+Spark SQL 查询 Hive 表:
+1.start-dfs.sh
+2.hive --service metastore &
+3.spark-sql
+
+
+
+
+ 报错1：Spark SQL 启动时出现
+[Fatal Error] :-1:-1: Premature end of file.
+ERROR Configuration: error parsing conf file:/home/bb/hive-site.xml
+Spark 启动时读取到了一个空的 /home/bb/hive-site.xml 文件。XML 文件为空或格式不完整就会报这个错。
+解决办法：
+
+删除错误的空文件：
+rm -f /home/bb/hive-site.xml
+确保 Spark 能找到真正的 Hive 配置文件：
+cp /usr/local/hive/conf/hive-site.xml /home/bb/spark/conf/
+这样 Spark SQL 启动时会自动加载正确的 hive-site.xml。
+
+
+
+报错2：Spark SQL 被系统 "Killed"
+SHOW DATABASES;
+Killed
+原因：
+服务器内存不足（OOM），被 Linux 的 OOM Killer 杀掉。
+
+free -m 输出显示：
+
+总内存仅 ~1.8 GB
+Swap 已经快用完
+其他服务（Hadoop、Hive Metastore 等）也占用大量内存
+ 解决办法：
+给 Spark Driver 增加内存限制：
+echo "spark.driver.memory 1g" >> /home/bb/spark/conf/spark-defaults.conf
+如果内存仍然吃紧，可以先停掉 Hadoop/YARN 不用的服务来释放内存：
+stop-dfs.sh
+stop-yarn.sh
+
+
+
+
+
+
+
